@@ -71,7 +71,7 @@ app.get('/', (req, res) => {
 	<script type="text/javascript" src="assets/js/view-image.min.js"></script>
 	<script type="text/javascript" src="assets/js/APlayer.min.js"></script>
 	<script type="text/javascript" src="assets/js/Meting.min.js"></script>
-	<script type="text/javascript" src="assets/js/main.js"></script>
+	<script type="text/javascript" src="assets/js/main.js?v=0.26.0"></script>
 	<script type="text/javascript" src="assets/js/custom.js"></script>
 </body>
 </html>

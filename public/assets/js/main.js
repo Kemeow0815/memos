@@ -12,12 +12,23 @@ if (typeof memos !== "undefined") {
 
 // 清理 creatorId，确保不包含 users/ 前缀
 const cleanCreatorId = (id) => {
-  if (typeof id !== 'string') id = String(id);
-  return id.startsWith("users/") ? id.slice(6) : id;
+  if (typeof id !== "string") id = String(id);
+  // 处理可能包含 users/ 前缀的情况
+  if (id.startsWith("users/")) {
+    id = id.slice(6);
+  }
+  return id;
 };
 
 // 应用清理后的 creatorId
-memo.creatorId = cleanCreatorId(memo.creatorId);
+const rawCreatorId = memo.creatorId;
+memo.creatorId = cleanCreatorId(rawCreatorId);
+console.log(
+  "[Memos Debug] Raw creatorId:",
+  rawCreatorId,
+  "Cleaned:",
+  memo.creatorId,
+);
 
 const limit = memo.limit;
 const memosHost = memo.host.replace(/\/$/, "");
@@ -94,7 +105,9 @@ function getNextList() {
 function fetchUserInfo() {
   // Memos 0.26.x API: 用户路径格式为 /api/v1/users/{id}，其中 id 包含 "users/" 前缀
   const userId = `users/${memo.creatorId}`;
-  return fetch(`${memosHost}/api/v1/users/${userId}`)
+  const url = `${memosHost}/api/v1/users/${userId}`;
+  console.log("[Memos Debug] fetchUserInfo URL:", url);
+  return fetch(url)
     .then((response) => response.json())
     .then((userData) => {
       return {
@@ -310,7 +323,9 @@ themeToggle.addEventListener("click", () => {
 function getTotal() {
   // Memos 0.26.x API: 用户 stats 路径格式为 /api/v1/users/{id}:getStats
   const userId = `users/${memo.creatorId}`;
-  fetch(`${memosHost}/api/v1/users/${userId}:getStats`)
+  const url = `${memosHost}/api/v1/users/${userId}:getStats`;
+  console.log("[Memos Debug] getTotal URL:", url);
+  fetch(url)
     .then((res) => res.json())
     .then((resdata) => {
       if (resdata && typeof resdata.totalMemoCount === "number") {
