@@ -22,18 +22,19 @@ const cleanCreatorId = (id) => {
 
 // 应用清理后的 creatorId
 const rawCreatorId = memo.creatorId;
-memo.creatorId = cleanCreatorId(rawCreatorId);
+const cleanedCreatorId = cleanCreatorId(rawCreatorId);
+memo.creatorId = cleanedCreatorId;
 console.log(
   "[Memos Debug] Raw creatorId:",
   rawCreatorId,
   "Cleaned:",
-  memo.creatorId,
+  cleanedCreatorId,
 );
 
 const limit = memo.limit;
 const memosHost = memo.host.replace(/\/$/, "");
 // Memos 0.26.x API: 使用新的 filter 语法，creator 格式为 "users/{id}"
-const memoUrl = `${memosHost}/api/v1/memos?filter=creator == "users/${memo.creatorId}"&pageSize=${limit}`;
+const memoUrl = `${memosHost}/api/v1/memos?filter=creator == "users/${cleanedCreatorId}"&pageSize=${limit}`;
 
 let page = 1;
 let nextPageToken = "";
@@ -104,7 +105,7 @@ function getNextList() {
 
 function fetchUserInfo() {
   // Memos 0.26.x API: 用户路径格式为 /api/v1/users/{id}，其中 id 包含 "users/" 前缀
-  const userId = `users/${memo.creatorId}`;
+  const userId = `users/${cleanedCreatorId}`;
   const url = `${memosHost}/api/v1/users/${userId}`;
   console.log("[Memos Debug] fetchUserInfo URL:", url);
   return fetch(url)
@@ -322,7 +323,7 @@ themeToggle.addEventListener("click", () => {
 // Memos Total Start
 function getTotal() {
   // Memos 0.26.x API: 用户 stats 路径格式为 /api/v1/users/{id}:getStats
-  const userId = `users/${memo.creatorId}`;
+  const userId = `users/${cleanedCreatorId}`;
   const url = `${memosHost}/api/v1/users/${userId}:getStats`;
   console.log("[Memos Debug] getTotal URL:", url);
   fetch(url)
