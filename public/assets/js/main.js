@@ -34,7 +34,7 @@ console.log(
 const limit = memo.limit;
 const memosHost = memo.host.replace(/\/$/, "");
 // Memos 0.26.x API: 使用新的 filter 语法，creator 格式为 "users/{id}"
-const memoUrl = `${memosHost}/api/v1/memos?filter=creator == "users/${cleanedCreatorId}"&pageSize=${limit}`;
+const memoUrl = `${memosHost}/api/v1/memos?filter=creator == "users/${memo.creatorId}"&pageSize=${limit}`;
 
 let page = 1;
 let nextPageToken = "";
@@ -105,9 +105,15 @@ function getNextList() {
 
 function fetchUserInfo() {
   // Memos 0.26.x API: 用户路径格式为 /api/v1/users/{id}，其中 id 包含 "users/" 前缀
-  const userId = `users/${cleanedCreatorId}`;
+  // 直接使用 memo.creatorId，它已经被清理过了
+  const userId = `users/${memo.creatorId}`;
   const url = `${memosHost}/api/v1/users/${userId}`;
-  console.log("[Memos Debug] fetchUserInfo URL:", url);
+  console.log(
+    "[Memos Debug] fetchUserInfo memo.creatorId:",
+    memo.creatorId,
+    "URL:",
+    url,
+  );
   return fetch(url)
     .then((response) => response.json())
     .then((userData) => {
@@ -323,9 +329,15 @@ themeToggle.addEventListener("click", () => {
 // Memos Total Start
 function getTotal() {
   // Memos 0.26.x API: 用户 stats 路径格式为 /api/v1/users/{id}:getStats
-  const userId = `users/${cleanedCreatorId}`;
+  // 直接使用 memo.creatorId，它已经被清理过了
+  const userId = `users/${memo.creatorId}`;
   const url = `${memosHost}/api/v1/users/${userId}:getStats`;
-  console.log("[Memos Debug] getTotal URL:", url);
+  console.log(
+    "[Memos Debug] getTotal memo.creatorId:",
+    memo.creatorId,
+    "URL:",
+    url,
+  );
   fetch(url)
     .then((res) => res.json())
     .then((resdata) => {
