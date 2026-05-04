@@ -4,37 +4,32 @@ const memo = {
   limit: 10,
   creatorId: "1",
   domId: "#memos",
+  apiVersion: "auto", // "auto", "0.26.0+", or "legacy"
 };
 
 if (typeof memos !== "undefined") {
   Object.assign(memo, memos);
 }
 
-// 清理 creatorId，确保不包含 users/ 前缀
-const cleanCreatorId = (id) => {
-  if (typeof id !== "string") id = String(id);
-  // 处理可能包含 users/ 前缀的情况
-  if (id.startsWith("users/")) {
-    id = id.slice(6);
-  }
-  return id;
-};
-
-// 应用清理后的 creatorId
-const rawCreatorId = memo.creatorId;
-const cleanedCreatorId = cleanCreatorId(rawCreatorId);
-memo.creatorId = cleanedCreatorId;
-console.log(
-  "[Memos Debug] Raw creatorId:",
-  rawCreatorId,
-  "Cleaned:",
-  cleanedCreatorId,
-);
-
 const limit = memo.limit;
 const memosHost = memo.host.replace(/\/$/, "");
-// Memos 0.26.x API: 使用新的 filter 语法，creator 格式为 "users/{id}"
-const memoUrl = `${memosHost}/api/v1/memos?filter=creator == "users/${memo.creatorId}"&pageSize=${limit}`;
+
+// Build memo list URL based on API version
+function buildMemoUrl() {
+  const baseUrl = `${memosHost}/api/v1/memos`;
+  if (memo.apiVersion === "legacy") {
+    // Legacy format: creator_id=={id}
+    return `${baseUrl}?filter=creator_id==${memo.creatorId}&pageSize=${limit}`;
+  } else if (memo.apiVersion === "0.26.0+") {
+    // New format: creator == "users/{id}"
+    return `${baseUrl}?filter=creator == "users/${memo.creatorId}"&pageSize=${limit}`;
+  } else {
+    // Auto-detect: try new format first
+    return `${baseUrl}?filter=creator == "users/${memo.creatorId}"&pageSize=${limit}`;
+  }
+}
+
+const memoUrl = buildMemoUrl();
 
 let page = 1;
 let nextPageToken = "";
@@ -104,24 +99,17 @@ function getNextList() {
 }
 
 function fetchUserInfo() {
-  // Memos 0.26.x API: 用户路径格式为 /api/v1/users/{id}，其中 id 包含 "users/" 前缀
-  // 直接使用 memo.creatorId，它已经被清理过了
-  const userId = `users/${memo.creatorId}`;
-  const url = `${memosHost}/api/v1/users/${userId}`;
-  console.log(
-    "[Memos Debug] fetchUserInfo memo.creatorId:",
-    memo.creatorId,
-    "URL:",
-    url,
-  );
-  return fetch(url)
+  // Memos 0.26.0+ uses users/{id} or users/{username} format
+  return fetch(`${memosHost}/api/v1/users/${memo.creatorId}`)
     .then((response) => response.json())
     .then((userData) => {
       return {
-        avatarurl: `${memosHost}${userData.avatarUrl}`,
-        memoname: userData.displayName,
+        avatarurl: userData.avatarUrl
+          ? `${memosHost}${userData.avatarUrl}`
+          : "",
+        memoname: userData.displayName || userData.username,
         userurl: `${memosHost}/u/${userData.username}`,
-        description: userData.description,
+        description: userData.description || "",
         memousername: userData.username,
       };
     })
@@ -200,34 +188,26 @@ function updateHTML(data, userInfo) {
         "<div class='video-wrapper'><iframe src='https://player.youku.com/embed/$1' frameborder=0 'allowfullscreen'></iframe></div>",
       );
 
-    // Memos 0.26.x API: 使用 attachments 替代 resources
-    const attachments = item.attachments || item.resources;
-    if (attachments && attachments.length > 0) {
+    // Memos 0.26.0+ uses 'attachments' instead of 'resources'
+    const attachments = item.attachments || item.resources || [];
+    if (attachments.length > 0) {
       let imgUrl = '<div class="resource-wrapper"><div class="images-wrapper">';
       let resUrl = "";
 
       for (const res of attachments) {
-        // 0.26.x 使用 type，旧版也使用 type
         const resType = res.type ? res.type.slice(0, 5) : "";
-        // 0.26.x 使用 externalLink 或 name/filename 组合
-        const resexlink = res.externalLink;
-        // 0.26.x 附件链接格式: /api/v1/attachments/{name} 或 /file/{name}/{filename}
-        let resLink;
-        if (resexlink) {
-          resLink = resexlink;
-        } else if (res.name) {
-          // 优先使用新的 attachments API 路径
-          resLink = `${memosHost}/api/v1/attachments/${res.name}`;
-        } else {
-          resLink = "";
-        }
+        // Memos 0.26.0+ uses externalLink or internal file path
+        const resexlink = res.externalLink || res.external_link;
+        const resLink = resexlink
+          ? resexlink
+          : `${memosHost}/file/${res.name}/${res.filename}`;
 
         if (resType === "image") {
           imgUrl += `<div class="resimg">
                         <img loading="lazy" src="${resLink}"/>
                     </div>`;
-        } else if (resLink) {
-          resUrl += `<a target="_blank" rel="noreferrer" href="${resLink}">${res.filename || res.name}</a>`;
+        } else {
+          resUrl += `<a target="_blank" rel="noreferrer" href="${resLink}">${res.filename}</a>`;
         }
       }
 
@@ -327,24 +307,26 @@ themeToggle.addEventListener("click", () => {
 // Darkmode End
 
 // Memos Total Start
+// Memos 0.26.0+ uses a different stats endpoint
 function getTotal() {
-  // Memos 0.26.x API: 用户 stats 路径格式为 /api/v1/users/{id}:getStats
-  // 直接使用 memo.creatorId，它已经被清理过了
-  const userId = `users/${memo.creatorId}`;
-  const url = `${memosHost}/api/v1/users/${userId}:getStats`;
-  console.log(
-    "[Memos Debug] getTotal memo.creatorId:",
-    memo.creatorId,
-    "URL:",
-    url,
-  );
-  fetch(url)
+  // Try the new stats endpoint first, fallback to old one
+  fetch(`${memosHost}/api/v1/users/${memo.creatorId}/stats`)
+    .then((res) => {
+      if (!res.ok) {
+        // Fallback to old endpoint for backward compatibility
+        return fetch(`${memosHost}/api/v1/users/${memo.creatorId}:getStats`);
+      }
+      return res;
+    })
     .then((res) => res.json())
     .then((resdata) => {
-      if (resdata && typeof resdata.totalMemoCount === "number") {
+      // Try different field names for compatibility
+      const count =
+        resdata.totalMemoCount || resdata.memo_count || resdata.memoCount;
+      if (typeof count === "number") {
         var memosCount = document.getElementById("total");
         if (memosCount) {
-          memosCount.innerHTML = resdata.totalMemoCount;
+          memosCount.innerHTML = count;
         }
       }
     })

@@ -1,21 +1,22 @@
-require('dotenv').config();
-const express = require('express');
-const path = require('path');
+require("dotenv").config();
+const express = require("express");
+const path = require("path");
 const app = express();
 // 设置环境变量
-const memosHost = process.env.MEMOS_HOST || 'https://memos.ee/';
-const memosLimit = process.env.MEMOS_LIMIT || '20';
-const memosUserId = process.env.MEMOS_USER_ID || '1';
-const memosTittle = process.env.MEMOS_TITTLE || 'Memos';
-const memosHead = process.env.MEMOS_HEAD || '';
-const memosMenu = process.env.MEMOS_MENU || '';
-const memosFooter = process.env.MEMOS_FOOTER || '';
-const memosIcon = process.env.MEMOS_ICON || '';
+const memosHost = process.env.MEMOS_HOST || "https://memos.ee/";
+const memosLimit = process.env.MEMOS_LIMIT || "20";
+const memosUserId = process.env.MEMOS_USER_ID || "1";
+const memosApiVersion = process.env.MEMOS_API_VERSION || "auto"; // "auto", "0.26.0+", or "legacy"
+const memosTittle = process.env.MEMOS_TITTLE || "Memos";
+const memosHead = process.env.MEMOS_HEAD || "";
+const memosMenu = process.env.MEMOS_MENU || "";
+const memosFooter = process.env.MEMOS_FOOTER || "";
+const memosIcon = process.env.MEMOS_ICON || "";
 // 静态文件服务
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, "public")));
 // 动态生成 HTML
-app.get('/', (req, res) => {
-    const html = `
+app.get("/", (req, res) => {
+  const html = `
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -63,7 +64,8 @@ app.get('/', (req, res) => {
 		var memos = {
 			host: '${memosHost}',  // Your Memos instance.
 			limit: '${memosLimit}',	// Pagination to show.
-			creatorId: '${memosUserId}',  // The old instance is 101, and the new instance is 1. 
+			creatorId: '${memosUserId}',  // The old instance is 101, and the new instance is 1.
+			apiVersion: '${memosApiVersion}',  // "auto", "0.26.0+", or "legacy"
 			domId: '#memos',	// Default #memos.
                        }
 	</script>
@@ -71,11 +73,11 @@ app.get('/', (req, res) => {
 	<script type="text/javascript" src="assets/js/view-image.min.js"></script>
 	<script type="text/javascript" src="assets/js/APlayer.min.js"></script>
 	<script type="text/javascript" src="assets/js/Meting.min.js"></script>
-	<script type="text/javascript" src="assets/js/main.js?v=0.26.2"></script>
+	<script type="text/javascript" src="assets/js/main.js"></script>
 	<script type="text/javascript" src="assets/js/custom.js"></script>
 </body>
 </html>
     `;
-    res.send(html);
+  res.send(html);
 });
 module.exports = app;

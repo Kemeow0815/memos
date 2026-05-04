@@ -3,18 +3,10 @@
 ## 自托管memos
 参照 https://blog.memos.ee/archives/21.html
 ## 部署到vercel
->[!tip]
+>[!tip] 
  提示
- `main`适配 **v0.26.x** (Memos API v1)
+ `main`适配v0.25.3
  若使用其他版本的`memos`请参考`Releases`中的版本
-
-### Memos 0.26.x API 更新说明
-
-本项目已更新支持 Memos 0.26.x 版本的 API，主要变更包括：
-
-- **List Memos API**: 使用新的 filter 语法 `creator == "users/{id}"` (遵循 Google AIP-160 标准)
-- **Attachments**: 0.26.x 使用 `/api/v1/attachments/{name}` 替代旧的 `/api/v1/resources` 端点
-- **User API**: 用户 ID 格式统一为 `users/{id}`
 
 环境变量:
 
