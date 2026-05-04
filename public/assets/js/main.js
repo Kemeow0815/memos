@@ -14,22 +14,24 @@ if (typeof memos !== "undefined") {
 const limit = memo.limit;
 const memosHost = memo.host.replace(/\/$/, "");
 
+// API version detection state
+let detectedApiVersion = null;
+
 // Build memo list URL based on API version
 function buildMemoUrl() {
   const baseUrl = `${memosHost}/api/v1/memos`;
-  if (memo.apiVersion === "legacy") {
+  const version = detectedApiVersion || memo.apiVersion;
+
+  if (version === "legacy") {
     // Legacy format: creator_id=={id}
     return `${baseUrl}?filter=creator_id==${memo.creatorId}&pageSize=${limit}`;
-  } else if (memo.apiVersion === "0.26.0+") {
-    // New format: creator == "users/{id}"
-    return `${baseUrl}?filter=creator == "users/${memo.creatorId}"&pageSize=${limit}`;
   } else {
-    // Auto-detect: try new format first
+    // New format: creator == "users/{id}"
     return `${baseUrl}?filter=creator == "users/${memo.creatorId}"&pageSize=${limit}`;
   }
 }
 
-const memoUrl = buildMemoUrl();
+let memoUrl = buildMemoUrl();
 
 let page = 1;
 let nextPageToken = "";
@@ -38,24 +40,56 @@ let btnRemove = 0;
 const memoDom = document.querySelector(memo.domId);
 const loadBtn = '<button class="load-btn button-load">努力加载中……</button>';
 
-let userInfo; // 定义全局变量 userInfo
+let userInfo;
+
+// Detect API version automatically
+function detectApiVersion() {
+  return new Promise((resolve) => {
+    // Try new API format first
+    const testUrl = `${memosHost}/api/v1/memos?filter=creator == "users/${memo.creatorId}"&pageSize=1`;
+
+    fetch(testUrl)
+      .then((res) => {
+        if (res.ok) {
+          detectedApiVersion = "0.26.0+";
+          console.log("[Memos] Detected API version: 0.26.0+");
+        } else {
+          // If new format fails, use legacy
+          detectedApiVersion = "legacy";
+          console.log("[Memos] Detected API version: legacy");
+        }
+        resolve();
+      })
+      .catch(() => {
+        detectedApiVersion = "legacy";
+        console.log("[Memos] Detection failed, defaulting to legacy API");
+        resolve();
+      });
+  });
+}
 
 if (memoDom) {
   memoDom.insertAdjacentHTML("afterend", loadBtn);
-  fetchUserInfo().then((info) => {
-    userInfo = info; // 赋值给全局变量 userInfo
-    // 更新 banner 信息
-    const bannerSubinfo = document.querySelector(".info");
-    if (bannerSubinfo) {
-      bannerSubinfo.textContent = userInfo.description;
-    }
-    getFirstList();
+
+  // Detect API version first, then proceed
+  detectApiVersion().then(() => {
+    // Rebuild URL with detected version
+    memoUrl = buildMemoUrl();
+
+    fetchUserInfo().then((info) => {
+      userInfo = info;
+      const bannerSubinfo = document.querySelector(".info");
+      if (bannerSubinfo) {
+        bannerSubinfo.textContent = userInfo.description;
+      }
+      getFirstList();
+    });
   });
 
   const btn = document.querySelector("button.button-load");
   btn.addEventListener("click", () => {
     btn.textContent = "努力加载中……";
-    updateHTML(nextDom, userInfo); // 传递 userInfo 参数
+    updateHTML(nextDom, userInfo);
     if (nextDom.length < limit) {
       btn.remove();
       btnRemove = 1;
@@ -67,11 +101,18 @@ if (memoDom) {
 
 function getFirstList() {
   fetch(`${memoUrl}&pageToken=${nextPageToken}`)
-    .then((res) => res.json())
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      return res.json();
+    })
     .then((resdata) => {
-      updateHTML(resdata.memos, userInfo);
-      nextPageToken = resdata.nextPageToken;
-      if (resdata.memos.length < limit) {
+      // Handle different response formats
+      const memos = resdata.memos || resdata.data || [];
+      updateHTML(memos, userInfo);
+      nextPageToken = resdata.nextPageToken || "";
+      if (memos.length < limit) {
         document.querySelector("button.button-load").remove();
         btnRemove = 1;
         return;
@@ -79,15 +120,23 @@ function getFirstList() {
       page++;
       getNextList();
     })
-    .catch((error) => console.error("Error fetching first list:", error));
+    .catch((error) => {
+      console.error("Error fetching first list:", error);
+      document.querySelector("button.button-load").textContent = "加载失败，请刷新重试";
+    });
 }
 
 function getNextList() {
   fetch(`${memoUrl}&pageToken=${nextPageToken}`)
-    .then((res) => res.json())
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      return res.json();
+    })
     .then((resdata) => {
-      nextPageToken = resdata.nextPageToken;
-      nextDom = resdata.memos;
+      nextPageToken = resdata.nextPageToken || "";
+      nextDom = resdata.memos || resdata.data || [];
       page++;
       if (nextDom.length < 1) {
         document.querySelector("button.button-load").remove();
@@ -99,9 +148,13 @@ function getNextList() {
 }
 
 function fetchUserInfo() {
-  // Memos 0.26.0+ uses users/{id} or users/{username} format
   return fetch(`${memosHost}/api/v1/users/${memo.creatorId}`)
-    .then((response) => response.json())
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
     .then((userData) => {
       return {
         avatarurl: userData.avatarUrl
@@ -115,7 +168,13 @@ function fetchUserInfo() {
     })
     .catch((error) => {
       console.error("Error fetching user data:", error);
-      return {};
+      return {
+        avatarurl: "",
+        memoname: "Unknown",
+        userurl: "#",
+        description: "",
+        memousername: "unknown",
+      };
     });
 }
 
@@ -132,6 +191,12 @@ function getLocationHtml(location) {
 }
 
 function updateHTML(data, userInfo) {
+  // Validate data is iterable
+  if (!data || !Array.isArray(data)) {
+    console.error("[Memos] Invalid data format:", data);
+    return;
+  }
+
   const TAG_REG = /#([^\s#]+?) /g;
   const BILIBILI_REG =
     /<a\shref="https:\/\/www\.bilibili\.com\/video\/((av[\d]{1,10})|(BV([\w]{10})))\/?">.*<\/a>/g;
@@ -150,6 +215,9 @@ function updateHTML(data, userInfo) {
 
   let memoResult = "";
   for (const item of data) {
+    // Skip invalid items
+    if (!item || !item.content) continue;
+
     let memoContREG = item.content.replace(
       TAG_REG,
       "<span class='tag-span'><a rel='noopener noreferrer' href='#$1'>#$1</a></span>",
@@ -188,7 +256,7 @@ function updateHTML(data, userInfo) {
         "<div class='video-wrapper'><iframe src='https://player.youku.com/embed/$1' frameborder=0 'allowfullscreen'></iframe></div>",
       );
 
-    // Memos 0.26.0+ uses 'attachments' instead of 'resources'
+    // Support both 'attachments' (0.26.0+) and 'resources' (legacy)
     const attachments = item.attachments || item.resources || [];
     if (attachments.length > 0) {
       let imgUrl = '<div class="resource-wrapper"><div class="images-wrapper">';
@@ -196,7 +264,6 @@ function updateHTML(data, userInfo) {
 
       for (const res of attachments) {
         const resType = res.type ? res.type.slice(0, 5) : "";
-        // Memos 0.26.0+ uses externalLink or internal file path
         const resexlink = res.externalLink || res.external_link;
         const resLink = resexlink
           ? resexlink
@@ -221,9 +288,11 @@ function updateHTML(data, userInfo) {
       }
     }
 
-    const relativeTime = getRelativeTime(new Date(item.createTime));
+    const createTime = item.createTime || item.created_ts || new Date();
+    const relativeTime = getRelativeTime(new Date(createTime));
+    const memoName = item.name || `m/${item.id}`;
 
-    memoResult += `<li class="timeline"><div class="memos__content" style="--avatar-url: url(${userInfo.avatarurl})"><div class="memos__text"><div class="memos__userinfo"><a href=${userInfo.userurl} target="_blank" ><div>${userInfo.memoname}</div></a><div><svg viewBox="0 0 24 24" aria-label="认证账号" class="memos__verify"><g><path d="M22.5 12.5c0-1.58-.875-2.95-2.148-3.6.154-.435.238-.905.238-1.4 0-2.21-1.71-3.998-3.818-3.998-.47 0-.92.084-1.336.25C14.818 2.415 13.51 1.5 12 1.5s-2.816.917-3.437 2.25c-.415-.165-.866-.25-1.336-.25-2.11 0-3.818 1.79-3.818 4 0 .494.083.964.237 1.4-1.272.65-2.147 2.018-2.147 3.6 0 1.495.782 2.798 1.942 3.486-.02.17-.032.34-.032.514 0 2.21 1.708 4 3.818 4 .47 0 .92-.086 1.335-.25.62 1.334 1.926 2.25 3.437 2.25 1.512 0 2.818-.916 3.437-2.25.415.163.865.248 1.336.248 2.11 0 3.818-1.79 3.818-4 0-.174-.012-.344-.033-.513 1.158-.687 1.943-1.99 1.943-3.484zm-6.616-3.334l-4.334 6.5c-.145.217-.382.334-.625.334-.143 0-.288-.04-.416-.126l-.115-.094-2.415-2.415c-.293-.293-.293-.768 0-1.06s.768-.294 1.06 0l1.77 1.767 3.825-5.74c.23-.345.696-.436 1.04-.207.346.23.44.696.21 1.04z"></path></g></svg></div><div class="memos__id">@${userInfo.memousername}</div></div><p>${memoContREG}</p></div><div class="memos__meta"><small class="memos__date">${relativeTime} • From「<a href="${memosHost}/${item.name}" target="_blank">Memos</a>」${locationHtml}</small></div></div></li>`;
+    memoResult += `<li class="timeline"><div class="memos__content" style="--avatar-url: url(${userInfo.avatarurl})"><div class="memos__text"><div class="memos__userinfo"><a href=${userInfo.userurl} target="_blank" ><div>${userInfo.memoname}</div></a><div><svg viewBox="0 0 24 24" aria-label="认证账号" class="memos__verify"><g><path d="M22.5 12.5c0-1.58-.875-2.95-2.148-3.6.154-.435.238-.905.238-1.4 0-2.21-1.71-3.998-3.818-3.998-.47 0-.92.084-1.336.25C14.818 2.415 13.51 1.5 12 1.5s-2.816.917-3.437 2.25c-.415-.165-.866-.25-1.336-.25-2.11 0-3.818 1.79-3.818 4 0 .494.083.964.237 1.4-1.272.65-2.147 2.018-2.147 3.6 0 1.495.782 2.798 1.942 3.486-.02.17-.032.34-.032.514 0 2.21 1.708 4 3.818 4 .47 0 .92-.086 1.335-.25.62 1.334 1.926 2.25 3.437 2.25 1.512 0 2.818-.916 3.437-2.25.415.163.865.248 1.336.248 2.11 0 3.818-1.79 3.818-4 0-.174-.012-.344-.033-.513 1.158-.687 1.943-1.99 1.943-3.484zm-6.616-3.334l-4.334 6.5c-.145.217-.382.334-.625.334-.143 0-.288-.04-.416-.126l-.115-.094-2.415-2.415c-.293-.293-.293-.768 0-1.06s.768-.294 1.06 0l1.77 1.767 3.825-5.74c.23-.345.696-.436 1.04-.207.346.23.44.696.21 1.04z"></path></g></svg></div><div class="memos__id">@${userInfo.memousername}</div></div><p>${memoContREG}</p></div><div class="memos__meta"><small class="memos__date">${relativeTime} • From「<a href="${memosHost}/${memoName}" target="_blank">Memos</a>」${locationHtml}</small></div></div></li>`;
   }
 
   const resultAll = `<ul>${memoResult}</ul>`;
@@ -307,32 +376,41 @@ themeToggle.addEventListener("click", () => {
 // Darkmode End
 
 // Memos Total Start
-// Memos 0.26.0+ uses a different stats endpoint
 function getTotal() {
-  // Try the new stats endpoint first, fallback to old one
-  fetch(`${memosHost}/api/v1/users/${memo.creatorId}/stats`)
-    .then((res) => {
-      if (!res.ok) {
-        // Fallback to old endpoint for backward compatibility
-        return fetch(`${memosHost}/api/v1/users/${memo.creatorId}:getStats`);
-      }
-      return res;
-    })
-    .then((res) => res.json())
-    .then((resdata) => {
-      // Try different field names for compatibility
-      const count =
-        resdata.totalMemoCount || resdata.memo_count || resdata.memoCount;
-      if (typeof count === "number") {
-        var memosCount = document.getElementById("total");
-        if (memosCount) {
-          memosCount.innerHTML = count;
+  // Try different endpoints for compatibility
+  const endpoints = [
+    `${memosHost}/api/v1/users/${memo.creatorId}/stats`,
+    `${memosHost}/api/v1/users/${memo.creatorId}:getStats`,
+  ];
+
+  function tryEndpoint(index) {
+    if (index >= endpoints.length) {
+      console.error("[Memos] All stats endpoints failed");
+      return;
+    }
+
+    fetch(endpoints[index])
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((resdata) => {
+        const count =
+          resdata.totalMemoCount || resdata.memo_count || resdata.memoCount;
+        if (typeof count === "number") {
+          var memosCount = document.getElementById("total");
+          if (memosCount) {
+            memosCount.innerHTML = count;
+          }
         }
-      }
-    })
-    .catch((err) => {
-      console.error("Error fetching memos:", err);
-    });
+      })
+      .catch(() => {
+        // Try next endpoint
+        tryEndpoint(index + 1);
+      });
+  }
+
+  tryEndpoint(0);
 }
 
 window.onload = getTotal;
