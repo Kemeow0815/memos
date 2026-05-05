@@ -366,6 +366,9 @@ function initWalineComments() {
 }
 
 // Initialize Waline for a specific memo
+let walineLoading = false;
+let walineLoaded = false;
+
 function initWalineForMemo(memoId) {
   if (window.Waline) {
     new Waline({
@@ -380,8 +383,8 @@ function initWalineForMemo(memoId) {
       highlight: true,
       emoji: ["https://cdn.jsdelivr.net/gh/walinejs/emojis@1.0.0/weibo"],
     });
-  } else {
-    // Load Waline script dynamically
+  } else if (!walineLoading && !walineLoaded) {
+    walineLoading = true;
     loadWalineScript(memoId);
   }
 }
@@ -392,21 +395,28 @@ function loadWalineScript(memoId) {
   script.src =
     "https://cdn.jsdelivr.net/npm/@waline/client@latest/dist/waline.min.js";
   script.onload = function () {
+    walineLoaded = true;
+    walineLoading = false;
     initWalineForMemo(memoId);
   };
   script.onerror = function () {
+    walineLoading = false;
     console.error("Failed to load Waline script");
-    document.getElementById(`waline-${memoId}`).innerHTML =
-      "<p>评论加载失败，请刷新重试</p>";
+    const commentDiv = document.getElementById(`waline-${memoId}`);
+    if (commentDiv) {
+      commentDiv.innerHTML = "<p>评论加载失败，请刷新重试</p>";
+    }
   };
   document.head.appendChild(script);
 
-  // Load Waline CSS
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href =
-    "https://cdn.jsdelivr.net/npm/@waline/client@latest/dist/waline.css";
-  document.head.appendChild(link);
+  // Load Waline CSS only once
+  if (!document.querySelector('link[href*="waline"]')) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href =
+      "https://cdn.jsdelivr.net/npm/@waline/client@latest/dist/waline.css";
+    document.head.appendChild(link);
+  }
 }
 // Memos End
 
