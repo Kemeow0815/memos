@@ -34,7 +34,7 @@ app.get("/", (req, res) => {
 <body>
 	<header>
 		<div class="menu">
-			<div class="title">Home</div>
+			<div class="title">主页</div>
 			<div class="pages">
 					${memosMenu}
 			</div>
