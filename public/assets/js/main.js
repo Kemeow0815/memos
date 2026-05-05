@@ -369,6 +369,10 @@ function initWalineComments() {
 let walineLoading = false;
 let walineLoaded = false;
 
+function getCurrentTheme() {
+  return document.body.classList.contains("dark-theme");
+}
+
 async function initWalineForMemo(memoId) {
   if (window.Waline && window.Waline.init) {
     window.Waline.init({
@@ -382,6 +386,7 @@ async function initWalineForMemo(memoId) {
       lang: "zh-CN",
       highlight: true,
       emoji: ["https://cdn.jsdelivr.net/gh/walinejs/emojis@1.0.0/weibo"],
+      dark: getCurrentTheme() ? "auto" : false,
     });
   } else if (!walineLoading && !walineLoaded) {
     walineLoading = true;
