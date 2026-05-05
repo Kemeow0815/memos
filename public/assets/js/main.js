@@ -45,24 +45,52 @@ let userInfo;
 // Detect API version automatically
 function detectApiVersion() {
   return new Promise((resolve) => {
-    // Try new API format first (Memos 0.26.0+ uses single quotes)
-    const testUrl = `${memosHost}/api/v1/memos?filter=creator=='users/${memo.creatorId}'&pageSize=1`;
+    // First test without filter to check if API works
+    const basicUrl = `${memosHost}/api/v1/memos?pageSize=1`;
 
-    fetch(testUrl)
+    fetch(basicUrl)
       .then((res) => {
-        if (res.ok) {
-          detectedApiVersion = "0.26.0+";
-          console.log("[Memos] Detected API version: 0.26.0+");
-        } else {
-          // If new format fails, use legacy
-          detectedApiVersion = "legacy";
-          console.log("[Memos] Detected API version: legacy");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        // API works, now try different filter formats
+        const testFormats = [
+          { format: `creator=='users/${memo.creatorId}'`, version: "0.26.0+" },
+          { format: `creator_id==${memo.creatorId}`, version: "legacy" },
+        ];
+
+        let tested = 0;
+        function tryFormat(index) {
+          if (index >= testFormats.length) {
+            detectedApiVersion = "legacy";
+            console.log("[Memos] All filter formats failed, using legacy");
+            resolve();
+            return;
+          }
+
+          const testUrl = `${memosHost}/api/v1/memos?filter=${encodeURIComponent(testFormats[index].format)}&pageSize=1`;
+          fetch(testUrl)
+            .then((res) => {
+              if (res.ok) {
+                detectedApiVersion = testFormats[index].version;
+                console.log(
+                  `[Memos] Detected API version: ${testFormats[index].version}`,
+                );
+                resolve();
+              } else {
+                tryFormat(index + 1);
+              }
+            })
+            .catch(() => {
+              tryFormat(index + 1);
+            });
         }
-        resolve();
+        tryFormat(0);
       })
       .catch(() => {
         detectedApiVersion = "legacy";
-        console.log("[Memos] Detection failed, defaulting to legacy API");
+        console.log("[Memos] Basic API failed, defaulting to legacy");
         resolve();
       });
   });
