@@ -26,8 +26,8 @@ function buildMemoUrl() {
     // Legacy format: creator_id=={id}
     return `${baseUrl}?filter=creator_id==${memo.creatorId}&pageSize=${limit}`;
   } else {
-    // New format: creator == "users/{id}"
-    return `${baseUrl}?filter=creator == "users/${memo.creatorId}"&pageSize=${limit}`;
+    // New format (Memos 0.26.0+): creator=='users/{id}' (single quotes required!)
+    return `${baseUrl}?filter=creator=='users/${memo.creatorId}'&pageSize=${limit}`;
   }
 }
 
@@ -45,8 +45,8 @@ let userInfo;
 // Detect API version automatically
 function detectApiVersion() {
   return new Promise((resolve) => {
-    // Try new API format first
-    const testUrl = `${memosHost}/api/v1/memos?filter=creator == "users/${memo.creatorId}"&pageSize=1`;
+    // Try new API format first (Memos 0.26.0+ uses single quotes)
+    const testUrl = `${memosHost}/api/v1/memos?filter=creator=='users/${memo.creatorId}'&pageSize=1`;
 
     fetch(testUrl)
       .then((res) => {
@@ -83,6 +83,8 @@ if (memoDom) {
         bannerSubinfo.textContent = userInfo.description;
       }
       getFirstList();
+      // Try to get total after API version is detected
+      getTotal();
     });
   });
 
@@ -452,13 +454,13 @@ themeToggle.addEventListener("click", () => {
 function getTotal() {
   // Try different endpoints for compatibility
   const endpoints = [
-    `${memosHost}/api/v1/users/${memo.creatorId}/stats`,
     `${memosHost}/api/v1/users/${memo.creatorId}:getStats`,
+    `${memosHost}/api/v1/users/${memo.creatorId}/stats`,
+    `${memosHost}/api/v1/memo_stats?userId=${memo.creatorId}`,
   ];
 
   function tryEndpoint(index) {
     if (index >= endpoints.length) {
-      console.error("[Memos] All stats endpoints failed");
       return;
     }
 
@@ -469,7 +471,10 @@ function getTotal() {
       })
       .then((resdata) => {
         const count =
-          resdata.totalMemoCount || resdata.memo_count || resdata.memoCount;
+          resdata.totalMemoCount ||
+          resdata.memo_count ||
+          resdata.memoCount ||
+          resdata.count;
         if (typeof count === "number") {
           var memosCount = document.getElementById("total");
           if (memosCount) {
@@ -478,15 +483,12 @@ function getTotal() {
         }
       })
       .catch(() => {
-        // Try next endpoint
         tryEndpoint(index + 1);
       });
   }
 
   tryEndpoint(0);
 }
-
-window.onload = getTotal;
 // Memos Total End
 
 // 解析豆瓣 Start
