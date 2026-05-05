@@ -17,18 +17,16 @@ const memosHost = memo.host.replace(/\/$/, "");
 // API version detection state
 let detectedApiVersion = null;
 
-// Build memo list URL based on API version
+// Build memo list URL - always get all memos and filter client-side
 function buildMemoUrl() {
   const baseUrl = `${memosHost}/api/v1/memos`;
-  const version = detectedApiVersion || memo.apiVersion;
+  // Get all memos, filter client-side for compatibility
+  return `${baseUrl}?pageSize=${limit}`;
+}
 
-  if (version === "legacy") {
-    // Legacy format: creator_id=={id}
-    return `${baseUrl}?filter=creator_id==${memo.creatorId}&pageSize=${limit}`;
-  } else {
-    // New format (Memos 0.26.0+): creator=='users/{id}' (single quotes required!)
-    return `${baseUrl}?filter=creator=='users/${memo.creatorId}'&pageSize=${limit}`;
-  }
+// Build URL without filter (for fallback)
+function buildMemoUrlWithoutFilter() {
+  return `${memosHost}/api/v1/memos?pageSize=${limit}`;
 }
 
 let memoUrl = buildMemoUrl();
@@ -45,7 +43,7 @@ let userInfo;
 // Detect API version automatically
 function detectApiVersion() {
   return new Promise((resolve) => {
-    // First test without filter to check if API works
+    // Test basic API to check if it works
     const basicUrl = `${memosHost}/api/v1/memos?pageSize=1`;
 
     fetch(basicUrl)
@@ -54,43 +52,28 @@ function detectApiVersion() {
         return res.json();
       })
       .then((data) => {
-        // API works, now try different filter formats
-        const testFormats = [
-          { format: `creator=='users/${memo.creatorId}'`, version: "0.26.0+" },
-          { format: `creator_id==${memo.creatorId}`, version: "legacy" },
-        ];
-
-        let tested = 0;
-        function tryFormat(index) {
-          if (index >= testFormats.length) {
+        // API works, check response format
+        if (data.memos && data.memos.length > 0) {
+          const firstMemo = data.memos[0];
+          if (firstMemo.creator && firstMemo.creator.startsWith("users/")) {
+            detectedApiVersion = "0.26.0+";
+            console.log("[Memos] Detected API version: 0.26.0+");
+          } else if (firstMemo.creator_id) {
             detectedApiVersion = "legacy";
-            console.log("[Memos] All filter formats failed, using legacy");
-            resolve();
-            return;
+            console.log("[Memos] Detected API version: legacy");
+          } else {
+            detectedApiVersion = "legacy";
+            console.log("[Memos] Using legacy format");
           }
-
-          const testUrl = `${memosHost}/api/v1/memos?filter=${encodeURIComponent(testFormats[index].format)}&pageSize=1`;
-          fetch(testUrl)
-            .then((res) => {
-              if (res.ok) {
-                detectedApiVersion = testFormats[index].version;
-                console.log(
-                  `[Memos] Detected API version: ${testFormats[index].version}`,
-                );
-                resolve();
-              } else {
-                tryFormat(index + 1);
-              }
-            })
-            .catch(() => {
-              tryFormat(index + 1);
-            });
+        } else {
+          detectedApiVersion = "legacy";
+          console.log("[Memos] No memos returned, using legacy format");
         }
-        tryFormat(0);
+        resolve();
       })
       .catch(() => {
         detectedApiVersion = "legacy";
-        console.log("[Memos] Basic API failed, defaulting to legacy");
+        console.log("[Memos] API failed, defaulting to legacy");
         resolve();
       });
   });
@@ -139,7 +122,21 @@ function getFirstList() {
     })
     .then((resdata) => {
       // Handle different response formats
-      const memos = resdata.memos || resdata.data || [];
+      let memos = resdata.memos || resdata.data || [];
+
+      // Filter by creator if needed
+      if (memo.creatorId) {
+        if (detectedApiVersion === "0.26.0+") {
+          // Filter by creator == "users/{id}"
+          memos = memos.filter((m) => m.creator === `users/${memo.creatorId}`);
+        } else {
+          // Filter by creator_id
+          memos = memos.filter(
+            (m) => String(m.creator_id) === String(memo.creatorId),
+          );
+        }
+      }
+
       updateHTML(memos, userInfo);
       nextPageToken = resdata.nextPageToken || "";
       if (memos.length < limit) {
@@ -321,8 +318,11 @@ function updateHTML(data, userInfo) {
 
     const createTime = item.createTime || item.created_ts || new Date();
     const relativeTime = getRelativeTime(new Date(createTime));
+    // For 0.26.0+, name is like "memos/123", extract just the number for comments
     const memoName = item.name || `m/${item.id}`;
-    const memoId = item.id || item.name;
+    const rawMemoId = item.id || item.name;
+    // Extract numeric ID for Waline path (handle both "memos/123" and plain "123")
+    const memoId = String(rawMemoId).replace(/^memos\//, "");
 
     memoResult += `<li class="timeline" data-memo-id="${memoId}"><div class="memos__content" style="--avatar-url: url(${userInfo.avatarurl})"><div class="memos__text"><div class="memos__userinfo"><a href=${userInfo.userurl} target="_blank" ><div>${userInfo.memoname}</div></a><div><svg viewBox="0 0 24 24" aria-label="认证账号" class="memos__verify"><g><path d="M22.5 12.5c0-1.58-.875-2.95-2.148-3.6.154-.435.238-.905.238-1.4 0-2.21-1.71-3.998-3.818-3.998-.47 0-.92.084-1.336.25C14.818 2.415 13.51 1.5 12 1.5s-2.816.917-3.437 2.25c-.415-.165-.866-.25-1.336-.25-2.11 0-3.818 1.79-3.818 4 0 .494.083.964.237 1.4-1.272.65-2.147 2.018-2.147 3.6 0 1.495.782 2.798 1.942 3.486-.02.17-.032.34-.032.514 0 2.21 1.708 4 3.818 4 .47 0 .92-.086 1.335-.25.62 1.334 1.926 2.25 3.437 2.25 1.512 0 2.818-.916 3.437-2.25.415.163.865.248 1.336.248 2.11 0 3.818-1.79 3.818-4 0-.174-.012-.344-.033-.513 1.158-.687 1.943-1.99 1.943-3.484zm-6.616-3.334l-4.334 6.5c-.145.217-.382.334-.625.334-.143 0-.288-.04-.416-.126l-.115-.094-2.415-2.415c-.293-.293-.293-.768 0-1.06s.768-.294 1.06 0l1.77 1.767 3.825-5.74c.23-.345.696-.436 1.04-.207.346.23.44.696.21 1.04z"></path></g></svg></div><div class="memos__id">@${userInfo.memousername}</div></div><p>${memoContREG}</p></div><div class="memos__meta"><small class="memos__date">${relativeTime} • From「<a href="${memosHost}/${memoName}" target="_blank">Memos</a>」${locationHtml}<button class="comment-btn" data-memo-id="${memoId}">💬 评论</button></small></div><div class="waline-comment" id="waline-${memoId}" style="display: none;"></div></div></li>`;
   }
@@ -369,9 +369,9 @@ function initWalineComments() {
 let walineLoading = false;
 let walineLoaded = false;
 
-function initWalineForMemo(memoId) {
-  if (window.Waline) {
-    new Waline({
+async function initWalineForMemo(memoId) {
+  if (window.Waline && window.Waline.init) {
+    window.Waline.init({
       el: `#waline-${memoId}`,
       serverURL: "https://waline-memos.268682.xyz/",
       path: `/memo/${memoId}`,
@@ -385,37 +385,35 @@ function initWalineForMemo(memoId) {
     });
   } else if (!walineLoading && !walineLoaded) {
     walineLoading = true;
-    loadWalineScript(memoId);
+    await loadWalineScript(memoId);
   }
 }
 
-// Load Waline script dynamically
-function loadWalineScript(memoId) {
-  const script = document.createElement("script");
-  script.src =
-    "https://cdn.jsdelivr.net/npm/@waline/client@latest/dist/waline.min.js";
-  script.onload = function () {
+// Load Waline script dynamically using ES modules
+async function loadWalineScript(memoId) {
+  // Load CSS first
+  if (!document.querySelector('link[href*="waline"]')) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/@waline/client@v3/dist/waline.css";
+    document.head.appendChild(link);
+  }
+
+  // Load Waline using dynamic import (ES module)
+  try {
+    const { init } =
+      await import("https://unpkg.com/@waline/client@v3/dist/waline.js");
+    window.Waline = { init };
     walineLoaded = true;
     walineLoading = false;
     initWalineForMemo(memoId);
-  };
-  script.onerror = function () {
+  } catch (e) {
     walineLoading = false;
-    console.error("Failed to load Waline script");
+    console.error("Failed to load Waline:", e);
     const commentDiv = document.getElementById(`waline-${memoId}`);
     if (commentDiv) {
       commentDiv.innerHTML = "<p>评论加载失败，请刷新重试</p>";
     }
-  };
-  document.head.appendChild(script);
-
-  // Load Waline CSS only once
-  if (!document.querySelector('link[href*="waline"]')) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href =
-      "https://cdn.jsdelivr.net/npm/@waline/client@latest/dist/waline.css";
-    document.head.appendChild(link);
   }
 }
 // Memos End
